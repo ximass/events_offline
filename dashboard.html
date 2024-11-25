@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Check-in de eventos</title>
+    <style>
+        .checkin-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .event-card {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .registrations {
+            margin-top: 20px;
+        }
+
+        .registrations h4 {
+            margin-bottom: 10px;
+        }
+
+        .registrations ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .registrations li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+
+        .checkin-button {
+            margin-left: auto;
+            padding: 6px 12px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .checkin-button:hover {
+            background-color: #1976D2;
+        }
+
+        .checked-in-label {
+            color: green;
+            margin-left: auto;
+        }
+
+        .register-button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .register-button:hover {
+            background-color: #45A049;
+        }
+
+        .registration-form {
+            margin-top: 10px;
+        }
+
+        .registration-form input {
+            margin-right: 5px;
+            padding: 5px;
+        }
+
+        .registration-form button {
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="checkin-container">
+        <h2>Check-in de eventos</h2>
+        <button id="fetch-button">Buscar Eventos</button>
+        <button id="sync-button">Sincronizar</button>
+        <div id="events-container">
+            <p>Carregando eventos...</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const eventsContainer = document.getElementById('events-container');
+            const syncButton = document.getElementById('sync-button');
+            const fetchButton = document.getElementById('fetch-button');
+
+            function formatDate(dateString) {
+                const options = { year: 'numeric', month: 'long', day: 'numeric' };
+                return new Date(dateString).toLocaleDateString('pt-BR', options);
+            }
+
+            function updateRegistrationCheckinStatus(eventId, registrationId, isCheckedIn) {
+                const event = events.find(e => e.id === eventId);
+                const registration = event.registrations.find(r => r.id === registrationId);
+                if (event) {
+                    if (registration) {
+                        registration.isCheckedIn = isCheckedIn;
+                        registration.userEmail = registration.user.email;
+                    }
+                }
+
+                let checkins = JSON.parse(localStorage.getItem('checkins')) || [];
+                if (isCheckedIn) {
+                    if (!checkins.some(ci => ci.eventId === eventId && ci.registrationId === registrationId)) {
+                        checkins.push({ event_id: eventId, registration_id: registrationId, user_email: registration.user.email });
+                    }
+                } else {
+                    checkins = checkins.filter(ci => !(ci.event_id === eventId && ci.registration_id === registrationId));
+                }
+                localStorage.setItem('checkins', JSON.stringify(checkins));
+
+                localStorage.setItem('events', JSON.stringify(events));
+            }
+
+            function performCheckin(eventId, registrationId) {
+                updateRegistrationCheckinStatus(eventId, registrationId, true);
+                renderEvents(events);
+            }
+
+            window.performCheckin = performCheckin;
+
+            function showRegistrationForm(eventId) {
+                const form = document.getElementById(`registration-form-${eventId}`);
+                form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            }
+
+            window.showRegistrationForm = showRegistrationForm;
+
+            function createRegistration(eventId) {
+                const nameInput = document.getElementById(`user-name-${eventId}`);
+                const emailInput = document.getElementById(`user-email-${eventId}`);
+                const passwordInput = document.getElementById(`user-password-${eventId}`);
+                const name = nameInput.value;
+                const email = emailInput.value;
+                const password = passwordInput.value;
+
+                if (!name || !email || !password) {
+                    alert('Por favor, preencha o nome, email e a senha.');
+                    return;
+                }
+
+                // Cria um novo usuário
+                let users = JSON.parse(localStorage.getItem('users')) || [];
+                const userId = getNextUserId();
+                const newUser = {
+                    id: userId,
+                    name: name,
+                    email: email,
+                    password: password
+                };
+                users.push(newUser);
+                localStorage.setItem('users', JSON.stringify(users));
+
+                // Cria uma nova inscrição
+                const event = events.find(e => e.id === eventId);
+                if (event) {
+                    const registrationId = getNextRegistrationId(event);
+                    const newRegistration = {
+                        id: registrationId,
+                        user: newUser,
+                        isCheckedIn: false
+                    };
+                    event.registrations.push(newRegistration);
+
+                    // Adiciona a registration no localStorage
+                    let registrations = JSON.parse(localStorage.getItem('registrations')) || [];
+                    registrations.push({
+                        event_id: eventId,
+                        registration_id: registrationId,
+                        user_email: newUser.email
+                    });
+                    localStorage.setItem('registrations', JSON.stringify(registrations));
+
+                    localStorage.setItem('events', JSON.stringify(events));
+                    renderEvents(events);
+                }
+
+                // Limpa os campos do formulário
+                nameInput.value = '';
+                emailInput.value = '';
+                passwordInput.value = '';
+                showRegistrationForm(eventId);
+            }
+
+            function getNextUserId() {
+                let users = JSON.parse(localStorage.getItem('users')) || [];
+                return users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1;
+            }
+
+            function getNextRegistrationId(event) {
+                return event.registrations.length > 0 ? Math.max(...event.registrations.map(r => r.id)) + 1 : 1;
+            }
+
+            window.createRegistration = createRegistration;
+
+            function mergeCheckinsWithEvents() {
+                const checkins = JSON.parse(localStorage.getItem('checkins')) || [];
+                events.forEach(event => {
+                    event.registrations.forEach(registration => {
+                        registration.isCheckedIn = registration.isCheckedIn || checkins.some(ci => ci.event_id === event.id && ci.registration_id === registration.id);
+                    });
+                });
+            }
+
+            function renderEvents(events) {
+                mergeCheckinsWithEvents();
+
+                if (events.length === 0) {
+                    eventsContainer.innerHTML = '<p>Nenhum evento encontrado.</p>';
+                    return;
+                }
+
+                eventsContainer.innerHTML = '';
+                events.forEach(event => {
+                    const eventCard = document.createElement('div');
+                    eventCard.className = 'event-card';
+                    eventCard.innerHTML = `
+                        <h3>${event.title}</h3>
+                        <p>${event.description}</p>
+                        <p><strong>Data:</strong> ${formatDate(event.start_date)} - ${formatDate(event.end_date)}</p>
+                        <div class="registrations">
+                            <h4>Usuários inscritos:</h4>
+                            ${event.registrations && event.registrations.length > 0 ? `
+                                <ul>
+                                    ${event.registrations.map(registration => `
+                                        <li>
+                                            ${registration.user.name} (${registration.user.email})
+                                            ${registration.isCheckedIn ? `
+                                                <span class="checked-in-label">✔️ Check-in realizado</span>
+                                            ` : `
+                                                <button class="checkin-button" onclick="performCheckin(${event.id}, ${registration.id})">Realizar check-in</button>
+                                            `}
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            ` : '<p>Nenhum usuário inscrito neste evento.</p>'}
+                            <!-- Formulário para registrar novo usuário -->
+                            <button class="register-button" onclick="showRegistrationForm(${event.id})">Adicionar Registro</button>
+                           <div id="registration-form-${event.id}" class="registration-form" style="display: none;">
+                                <input type="text" id="user-name-${event.id}" placeholder="Nome">
+                                <input type="text" id="user-email-${event.id}" placeholder="Email">
+                                <input type="password" id="user-password-${event.id}" placeholder="Senha">
+                                <button onclick="createRegistration(${event.id})">Registrar</button>
+                            </div>
+                        </div>
+                    `;
+                    eventsContainer.appendChild(eventCard);
+                });
+            }
+
+            async function fetchEventsFromAPI() {
+                try {
+                    const response = await fetch('http://127.0.0.1:8000/api/events-with-registrations-and-checkins');
+                    const data = await response.json();
+
+                    events = data;
+
+                    // Salva os eventos no localStorage
+                    localStorage.setItem('events', JSON.stringify(events));
+
+                    renderEvents(events);
+                } catch (error) {
+                    console.error('Erro ao buscar eventos:', error);
+                    eventsContainer.innerHTML = '<p>Erro ao carregar eventos.</p>';
+                }
+            }
+
+            function loadEventsFromLocalStorage() {
+                const storedEvents = localStorage.getItem('events');
+                if (storedEvents) {
+                    events = JSON.parse(storedEvents);
+ 
+                    renderEvents(events);
+                } else {
+                    fetchEventsFromAPI();
+                }
+            }
+
+            async function synchronizeData() {
+                const users = JSON.parse(localStorage.getItem('users')) || [];
+                const registrations = JSON.parse(localStorage.getItem('registrations')) || [];
+                const checkins = JSON.parse(localStorage.getItem('checkins')) || [];
+
+                if (checkins.length === 0 && users.length === 0 && events.length === 0) {
+                    alert('Nenhum dado para sincronizar.');
+                    return;
+                }
+
+                try {
+                    const dataToSync = {
+                        users: users,
+                        registrations: registrations,
+                        checkins: checkins
+                    };
+
+                    await fetch('http://127.0.0.1:8000/api/sync', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(dataToSync)
+                    });
+
+                    return;
+                    localStorage.removeItem('checkins');
+                    localStorage.removeItem('users');
+                    localStorage.removeItem('events');
+                    localStorage.removeItem('registrations');
+
+                    alert('Dados sincronizados com sucesso!');
+
+                    fetchEventsFromAPI();
+                } catch (error) {
+                    console.error('Erro ao sincronizar dados:', error);
+                    alert('Erro ao sincronizar dados.');
+                }
+            }
+
+            let events = [];
+
+            loadEventsFromLocalStorage();
+
+            syncButton.addEventListener('click', synchronizeData);
+            fetchButton.addEventListener('click', fetchEventsFromAPI);
+        });
+    </script>
+</body>
+</html>
